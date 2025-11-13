@@ -1,0 +1,76 @@
+name: Auto Label Issues
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    
+    steps:
+      - name: Label issue based on keywords
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title.toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+            const content = title + ' ' + body;
+            
+            const labels = [];
+            
+            // Check for "error" keyword -> add "bug" label
+            if (content.includes('error')) {
+              labels.push('bug');
+            }
+            
+            // Check for "add" keyword -> add "feature" label
+            if (content.includes('add')) {
+              labels.push('feature');
+            }
+            
+            // Add labels if any were found
+            if (labels.length > 0) {
+              // First, ensure the labels exist in the repository
+              for (const label of labels) {
+                try {
+                  await github.rest.issues.getLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label
+                  });
+                } catch (error) {
+                  if (error.status === 404) {
+                    // Create the label if it doesn't exist
+                    const labelColors = {
+                      'bug': 'd73a4a',
+                      'feature': 'a2eeef'
+                    };
+                    await github.rest.issues.createLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name: label,
+                      color: labelColors[label] || 'ededed',
+                      description: `Auto-generated ${label} label`
+                    });
+                  }
+                }
+              }
+              
+              // Add labels to the issue
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: labels
+              });
+              
+              console.log(`Added labels: ${labels.join(', ')}`);
+            } else {
+              console.log('No matching keywords found');
+            }
